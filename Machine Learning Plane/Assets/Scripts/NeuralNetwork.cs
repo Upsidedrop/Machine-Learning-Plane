@@ -1,14 +1,26 @@
+using System.Collections;
 using UnityEngine;
 
 public class NeuralNetwork : MonoBehaviour
 {
+    [SerializeField]
     float[] inputs = new float[28];
     [SerializeField]
     Transform objective;
     Node[][] nodes = new Node[10][];
+    Rigidbody rb;
+    [SerializeField]
+    float fitness = 0;
+    public static float bestFitness = 0;
+    public static Node[][] bestNodes = new Node[10][];
+    float xRotation = 0;
+    float yRotation = 0;
+    float zRotation = 0;
     private void Awake()
     {
         CreateNodes();
+        rb = GetComponent<Rigidbody>();
+        StartCoroutine(TimeAlive());
     }
     void GetInputs()
     {
@@ -47,7 +59,9 @@ public class NeuralNetwork : MonoBehaviour
             Physics.Raycast(
                 transform.position + (-transform.right * 1.3f),
                 directions[i],
-                out RaycastHit hit);
+                out RaycastHit hit,
+                float.PositiveInfinity,
+                ~4);
             Debug.DrawLine(
                 transform.position + (-transform.right * 1.3f),
                 (transform.position + (-transform.right * 1.3f) + directions[i]),
@@ -61,6 +75,10 @@ public class NeuralNetwork : MonoBehaviour
     {
         GetInputs();
         AssignNodes();
+        transform.rotation = Quaternion.Normalize(Quaternion.Euler(new Vector3(
+            CheckForInvalid(Mathf.Repeat(xRotation, 360)),
+            CheckForInvalid(Mathf.Repeat(yRotation, 360)),
+            CheckForInvalid(Mathf.Repeat(zRotation, 360)))));
     }
     float DirectionToGameobject(Transform goal)
     {
@@ -83,11 +101,15 @@ public class NeuralNetwork : MonoBehaviour
         for (int i = 0; i < 10; i++)
         {
             nodes[i] = new Node[10];
+            bestNodes[i] = new Node[10];
             for (int r = 0; r < 10; r++)
             {
                 nodes[i][r].value = 0;
                 nodes[i][r].inputWeights = new float[28];
                 nodes[i][r].bias = 0;
+                bestNodes[i][r].inputWeights = new float[28];
+                bestNodes[i][r].bias = 0;
+                bestNodes[i][r].value = 0;
             }
         }
     }
@@ -162,7 +184,76 @@ public class NeuralNetwork : MonoBehaviour
                 lastValues[i1] = item;
             }
         }
-
+        rb.velocity = new Vector3(
+            (-transform.right.x) * Mathf.Clamp(CheckForInvalid(nodes[9][0].value), 0, 15),
+            (-transform.right.y) * Mathf.Clamp(CheckForInvalid(nodes[9][0].value), 0, 15),
+            (-transform.right.z) * Mathf.Clamp(CheckForInvalid(nodes[9][0].value), 0, 15))
+            + (Vector3.down * 3);
+        xRotation += Mathf.Clamp(nodes[9][1].value, -5, 5);
+        yRotation += Mathf.Clamp(nodes[9][2].value, -5, 5);
+        zRotation += Mathf.Clamp(nodes[9][3].value, -5, 5);
+    }
+    void Death()
+    {
+        transform.SetPositionAndRotation(
+            Vector3.zero,
+            Quaternion.Euler(Vector3.zero));
+        rb.velocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
+        xRotation = 0;
+        yRotation = 0;
+        zRotation = 0;
+        if (fitness > bestFitness)
+        {
+            for (int i = 0; i < nodes.Length; i++)
+            {
+                for (int i1 = 0; i1 < nodes[i].Length; i1++)
+                {
+                    bestNodes[i][i1] = nodes[i][i1];
+                    bestFitness = fitness;
+                }
+            }
+            print(bestFitness);
+        }
+        fitness = 0;
+        Mutate(bestNodes, -1, 1);
+    }
+    public void Mutate(Node[][] parentNodes, float mutationMin, float mutationMax)
+    {
+        for (int i1 = 0; i1 < parentNodes.Length; i1++)
+        {
+            for (int i = 0; i < parentNodes[i1].Length; i++)
+            {
+                nodes[i1][i] = parentNodes[i1][i];
+                nodes[i1][i].bias += Random.Range(mutationMin, mutationMax);
+                for (int i2 = 0; i2 < 7; i2++)
+                {
+                    nodes[i1][i].inputWeights[i2] += Random.Range(mutationMin, mutationMax);
+                }
+            }
+        }
+    }
+    private void OnCollisionEnter(Collision collision)
+    {
+        Death();
+    }
+    IEnumerator TimeAlive()
+    {
+        yield return new WaitForSeconds(0.1f);
+        fitness += 0.1f;
+        StartCoroutine(TimeAlive());
+    }
+    float CheckForInvalid(float value)
+    {
+        if (float.IsNaN(value))
+        {
+            return 0;
+        }
+        if (float.IsInfinity(value))
+        {
+            return 0;
+        }
+        return value;
     }
 }
 public struct Node
